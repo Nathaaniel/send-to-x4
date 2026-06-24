@@ -112,8 +112,14 @@ It is designed for people who:
   
   - **Filename**: `Title - Author - Source - Date.epub`
   - **Location on X4**: `/send-to-x4/`
-  - **Content**: Clean XHTML with metadata (Title, Author, Source URL)
-  - **Images**: Disabled by default for X4 compatibility (codebase supports it)
+  - **Content**: Clean XHTML with metadata (Title, Author, Source URL, reading time)
+  - **Images**: Embedded and optimized for e-ink (grayscale + downscaled). A cover image is added from the page's `og:image`. See [IMAGES.md](IMAGES.md).
+  - **Chapter TOC**: Headings (`h1`–`h3`) become a navigable table of contents on the X4
+  - **Reading time**: Shown in the article header (≈200 wpm)
+  - **Source footer**: Links are flattened to plain text (unclickable on e-ink), and a scannable **QR code of the source URL** plus the URL itself are added at the end so you can reopen the article on your phone
+  - **Tidier output**: Site-name suffixes stripped from titles, document language detected, newsletter/share/related clutter removed, and code blocks/tables wrapped to fit the 480px screen
+
+  The popup also shows a **"⚠️ Already sent"** warning when you open an article you've previously sent, so you don't re-clutter the device.
   
   ---
   
@@ -138,7 +144,7 @@ It is designed for people who:
   
   ## Known Limitations
   
-  - Text-only (images are temporarily disabled)
+  - Images are downloaded while you are on internet WiFi (before you switch to the X4 hotspot)
   - Requires manual WiFi switching
   - Works best on long-form, reading-oriented pages
   - Not a read-later service or cloud sync tool
@@ -167,6 +173,7 @@ It is designed for people who:
 ## Acknowledgements
 
 - **[borisfaure](https://github.com/borisfaure)** — For implementing CrossPoint firmware support ([PR #2](https://github.com/Xatpy/send-to-x4/pull/2))
+- **[qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)** by Kazuhiko Arase (MIT) — offline QR code generation for the source footer
 
 ---
 
