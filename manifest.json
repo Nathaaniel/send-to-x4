@@ -23,6 +23,8 @@
       "src/epub/jszip.min.js",
       "src/utils/logger.js",
       "src/utils/sanitize.js",
+      "src/epub/image_utils.js",
+      "src/epub/qrcode.min.js",
       "src/epub/epub_templates.js",
       "src/epub/epub_builder.js",
       "src/upload/x4_upload_tab.js",

@@ -8,6 +8,99 @@ export function extractArticle() {
         console.log('[X4] Extracting article...');
         const hostname = window.location.hostname;
 
+        // --- Image helpers (self-contained; this function is stringified & injected) ---
+
+        // Find a cover image for the EPUB from page metadata.
+        const getMetaCover = () => {
+            const selectors = [
+                'meta[property="og:image:secure_url"]',
+                'meta[property="og:image"]',
+                'meta[name="twitter:image"]',
+                'meta[name="twitter:image:src"]',
+                'link[rel="image_src"]'
+            ];
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                const val = el && (el.getAttribute('content') || el.getAttribute('href'));
+                if (val) {
+                    try { return new URL(val, window.location.href).href; } catch (e) { return val; }
+                }
+            }
+            return null;
+        };
+
+        // Normalize <img> tags in extracted HTML: resolve lazy-loaded sources to a
+        // real absolute src, drop tracking pixels, and strip noisy attributes so the
+        // background service worker can fetch + embed them reliably.
+        const normalizeImages = (html) => {
+            try {
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                doc.querySelectorAll('img').forEach(img => {
+                    let src = img.getAttribute('src') || img.getAttribute('data-src') ||
+                        img.getAttribute('data-original') || img.getAttribute('data-lazy-src') || '';
+                    if (!src) {
+                        const ss = img.getAttribute('srcset') || img.getAttribute('data-srcset');
+                        if (ss) src = ss.split(',')[0].trim().split(/\s+/)[0];
+                    }
+                    if (!src) { img.remove(); return; }
+                    // Drop tiny tracking pixels declared via width/height attributes
+                    const w = parseInt(img.getAttribute('width') || '0', 10);
+                    const h = parseInt(img.getAttribute('height') || '0', 10);
+                    if ((w && w <= 2) || (h && h <= 2)) { img.remove(); return; }
+                    try { src = new URL(src, window.location.href).href; } catch (e) { /* keep as-is */ }
+                    const alt = img.getAttribute('alt') || '';
+                    Array.from(img.attributes).forEach(a => img.removeAttribute(a.name));
+                    img.setAttribute('src', src);
+                    if (alt) img.setAttribute('alt', alt);
+                });
+                return doc.body.innerHTML;
+            } catch (e) {
+                console.warn('[X4] normalizeImages failed:', e);
+                return html;
+            }
+        };
+
+        // Remove leftover clutter Readability sometimes keeps: newsletter/share/
+        // related/promo widgets and asides. Conservative: only obvious matches.
+        const stripJunk = (html) => {
+            try {
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const junk = /(^|[\s_-])(newsletter|subscribe|signup|sign-up|share|social|related|recirc|promo|sponsor|advert|cookie|comment)([\s_-]|$)/i;
+                doc.querySelectorAll('aside, [role="complementary"]').forEach(el => el.remove());
+                doc.querySelectorAll('*').forEach(el => {
+                    const sig = ((el.getAttribute('class') || '') + ' ' + (el.getAttribute('id') || '')).trim();
+                    if (sig && junk.test(sig)) el.remove();
+                });
+                return doc.body.innerHTML;
+            } catch (e) {
+                console.warn('[X4] stripJunk failed:', e);
+                return html;
+            }
+        };
+
+        // Strip a trailing " | Site Name" / " - Site" / " — Site" suffix from the title.
+        const cleanTitle = (title) => {
+            if (!title) return title;
+            const siteName = document.querySelector('meta[property="og:site_name"]')?.content || '';
+            const host = window.location.hostname.replace(/^www\./, '').split('.').slice(-2, -1)[0] || '';
+            const candidates = [siteName, host].filter(Boolean).map(s => s.toLowerCase());
+            const m = title.match(/^(.*\S)\s+[|\-–—·:]{1,2}\s+([^|\-–—·:]+)$/);
+            if (m && m[1].length >= 15) {
+                const tail = m[2].trim().toLowerCase();
+                if (candidates.some(c => tail === c || tail.includes(c) || c.includes(tail))) {
+                    return m[1].trim();
+                }
+            }
+            return title.trim();
+        };
+
+        // Document language for EPUB metadata (helps device hyphenation/TTS).
+        const getDocLang = () => {
+            const l = (document.documentElement.getAttribute('lang') ||
+                document.querySelector('meta[http-equiv="content-language"]')?.content || '').trim();
+            return l ? l.split(',')[0].trim() : 'en';
+        };
+
         // --- TWITTER / X SUPPORT ---
         if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
             console.log('[X4] Detected Twitter/X');
@@ -63,8 +156,8 @@ export function extractArticle() {
                         console.log(`[X4] Tweet ${index} text length:`, text.length);
 
                         // Extract Images
-                        // const photoEls = tweet.querySelectorAll('[data-testid="tweetPhoto"] img');
-                        // const photoUrls = Array.from(photoEls).map(img => img.src);
+                        const photoEls = tweet.querySelectorAll('[data-testid="tweetPhoto"] img');
+                        const photoUrls = Array.from(photoEls).map(img => img.src);
 
                         // Title logic
                         // For Articles, prefer the explicit article title
@@ -96,12 +189,10 @@ export function extractArticle() {
                         }
                         if (text) tweetHtml += `<div>${text}</div>`; // Articles often have complex HTML structure, so use div
 
-                        // Images disabled for X4 compatibility
-                        /*
+                        // Inline tweet images (downloaded + optimized later by the EPUB builder)
                         photoUrls.forEach(url => {
-                            tweetHtml += `<img src="${escapeXml(url)}" style="max-width: 100%; margin: 10px 0; border-radius: 8px;" />`;
+                            if (url) tweetHtml += `<img src="${escapeXml(url)}" />`;
                         });
-                        */
                         tweetHtml += `</div>`;
 
                         threadContent.push(tweetHtml);
@@ -116,15 +207,11 @@ export function extractArticle() {
                     const date = dateEl ? dateEl.getAttribute('datetime').split('T')[0] : new Date().toISOString().split('T')[0];
 
                     // Use first image found as cover
-                    // We can look at the first tweet's photos
                     let coverUrl = null;
-                    /*
-                    // Cover disabled for X4 compatibility
                     const firstTweetPhotos = tweets[0].querySelectorAll('[data-testid="tweetPhoto"] img');
                     if (firstTweetPhotos.length > 0) {
                         coverUrl = firstTweetPhotos[0].src;
                     }
-                    */
 
                     return {
                         success: true,
@@ -133,6 +220,7 @@ export function extractArticle() {
                             author: `X (${authorHandle})`,
                             date,
                             coverUrl,
+                            lang: getDocLang(),
                             wordCount: threadContent.length * 30,
                             body: threadContent.join('\n'),
                             rawText: '',
@@ -162,9 +250,9 @@ export function extractArticle() {
             const article = reader.parse();
 
             if (article && article.textContent && article.textContent.length >= 400) {
-                title = article.title || document.title;
+                title = cleanTitle(article.title || document.title);
                 author = article.byline || article.siteName || '';
-                body = article.content;
+                body = normalizeImages(stripJunk(article.content));
                 textContent = article.textContent;
                 wordCount = textContent.split(/\s+/).length;
 
@@ -193,6 +281,8 @@ export function extractArticle() {
                         title,
                         author,
                         date,
+                        coverUrl: getMetaCover(),
+                        lang: getDocLang(),
                         wordCount,
                         body,
                         rawText: textContent,
@@ -238,9 +328,11 @@ export function extractArticle() {
         return {
             success: true,
             article: {
-                title,
+                title: cleanTitle(title),
                 author,
                 date,
+                coverUrl: getMetaCover(),
+                lang: getDocLang(),
                 wordCount,
                 body,
                 rawText: textContent,

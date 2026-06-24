@@ -18,32 +18,57 @@ const EpubBuilder = {
 
         const zip = new JSZip();
         const uuid = this.generateUuid();
+        const hasImageUtils = typeof ImageUtils !== 'undefined';
 
+        // --- Cover image ---------------------------------------------------
         let coverMediaType = null;
-        /*
-        // Cover disabled for X4 compatibility
-        if (article.coverUrl) {
-            try {
-                console.log('[EpubBuilder] Fetching cover:', article.coverUrl);
-                const response = await fetch(article.coverUrl);
-                if (response.ok) {
-                    const blob = await response.blob();
-                    coverMediaType = blob.type || 'image/jpeg'; // Default to jpeg if unknown
-                    // Add to zip
-                    zip.file('OEBPS/images/cover.jpg', blob);
-                }
-            } catch (e) {
-                console.warn('[EpubBuilder] Failed to fetch cover:', e);
+        let coverHref = null;
+        if (hasImageUtils && article.coverUrl) {
+            console.log('[EpubBuilder] Fetching cover:', article.coverUrl);
+            const cover = await ImageUtils.prepareRemoteCover(article.coverUrl);
+            if (cover) {
+                coverHref = 'images/cover.' + cover.ext;
+                coverMediaType = cover.mediaType;
+                zip.file('OEBPS/' + coverHref, cover.blob);
             }
         }
-        */
+
+        // --- Inline article images ----------------------------------------
+        // Download each <img>, optimize for e-ink, embed in the zip, and
+        // rewrite the body to reference the local copies.
+        let body = article.body;
+        let images = [];
+        if (hasImageUtils) {
+            try {
+                const embedded = await ImageUtils.embedBodyImages(article.body, article.sourceUrl, zip);
+                body = embedded.body;
+                images = embedded.images;
+                console.log('[EpubBuilder] Embedded', images.length, 'inline image(s)');
+            } catch (e) {
+                console.warn('[EpubBuilder] Inline image embedding failed:', e.message);
+            }
+        }
+
+        // --- Flatten links ------------------------------------------------
+        // Hyperlinks are unclickable on the X4, so drop them but keep the text.
+        body = EpubTemplates.flattenLinks(body);
+
+        // --- Chapter TOC --------------------------------------------------
+        // Inject ids into headings and derive a navMap so long articles are
+        // navigable from the X4's table of contents.
+        const toc = EpubTemplates.buildToc(body);
+        body = toc.body;
 
         const metadata = {
             title: article.title,
             author: article.author,
             date: article.date,
+            lang: article.lang || 'en',
             uuid: uuid,
-            coverMediaType
+            coverMediaType,
+            coverHref,
+            images,
+            headings: toc.headings
         };
 
         // Add mimetype file (must be first and uncompressed)
@@ -58,8 +83,8 @@ const EpubBuilder = {
         // Add toc.ncx
         zip.file('OEBPS/toc.ncx', EpubTemplates.tocNcx(metadata));
 
-        // Add content.xhtml (pass full article including url)
-        zip.file('OEBPS/content.xhtml', EpubTemplates.contentXhtml(article));
+        // Add content.xhtml (pass full article with rewritten body)
+        zip.file('OEBPS/content.xhtml', EpubTemplates.contentXhtml({ ...article, body }));
 
         // Generate the EPUB as a Blob
         const epubBlob = await zip.generateAsync({

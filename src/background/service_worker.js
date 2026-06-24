@@ -18,6 +18,8 @@ if (typeof importScripts === 'function') {
             '../epub/jszip.min.js',
             '../utils/logger.js',
             '../utils/sanitize.js',
+            '../epub/image_utils.js',
+            '../epub/qrcode.min.js',
             '../epub/epub_templates.js',
             '../epub/epub_builder.js',
             '../upload/x4_upload_tab.js',
