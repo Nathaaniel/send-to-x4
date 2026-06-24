@@ -1,6 +1,7 @@
 import { UIManager } from './ui_manager.js';
 import { FileManager } from './file_manager.js';
 import { ArticleManager } from './article_manager.js';
+import { SentLog } from './sent_log.js';
 
 // Cross-browser compatibility
 const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
@@ -83,6 +84,8 @@ class PopupController {
             const article = await this.articleManager.checkArticle();
             if (article) {
                 this.ui.showArticleFound(article);
+                const sent = await SentLog.find(article.sourceUrl);
+                if (sent) this.ui.showDuplicateWarning(sent);
             } else {
                 // Determine if it was an error or just not found? 
                 // ArticleManager returns null on "not found" (e.g. too short).
@@ -237,6 +240,7 @@ class PopupController {
 
             if (response && response.success) {
                 this.ui.setSendButtonState('success', response.message);
+                await SentLog.record(article);
 
                 // Refresh files after delay
                 setTimeout(async () => {
@@ -269,6 +273,7 @@ class PopupController {
 
             if (response && response.success) {
                 this.ui.setDownloadButtonState('success');
+                await SentLog.record(article);
             } else {
                 this.ui.setDownloadButtonState('error', response?.error || 'Unknown error');
             }

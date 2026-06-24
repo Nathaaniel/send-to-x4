@@ -17,6 +17,7 @@ export class UIManager {
             articleTitle: document.getElementById('article-title'),
             articleAuthor: document.getElementById('article-author'),
             articleWords: document.getElementById('article-words'),
+            articleDuplicate: document.getElementById('article-duplicate'),
             errorMessage: document.getElementById('error-message'),
             sendBtn: document.getElementById('send-btn'),
             downloadBtn: document.getElementById('download-btn'),
@@ -71,6 +72,19 @@ export class UIManager {
         this.elements.articleTitle.textContent = article.title;
         this.elements.articleAuthor.textContent = article.author;
         this.elements.articleWords.textContent = `${article.wordCount?.toLocaleString() || '—'} words`;
+
+        // Reset any stale duplicate warning; showDuplicateWarning() re-shows it if needed.
+        if (this.elements.articleDuplicate) {
+            this.elements.articleDuplicate.classList.add('hidden');
+            this.elements.articleDuplicate.textContent = '';
+        }
+    }
+
+    showDuplicateWarning(info) {
+        const el = this.elements.articleDuplicate;
+        if (!el) return;
+        el.textContent = `⚠️ Already sent${info?.date ? ' on ' + info.date : ''}`;
+        el.classList.remove('hidden');
     }
 
     showArticleNotFound() {
