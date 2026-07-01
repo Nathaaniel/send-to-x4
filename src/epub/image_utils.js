@@ -14,7 +14,7 @@ const ImageUtils = {
         grayscale: true,
         grayscaleGamma: 0.85, // <1 lightens midtones (keeps pure black/white); 1 = no change
         maxDimension: 800,   // px, longest side for inline images. X4 panel is 480x800.
-        coverSize: { width: 480, height: 800 }, // portrait cover, 3:5 to match the X4 screen
+        coverSize: { width: 480, height: 400 }, // landscape cover, 6:5 to match the library thumbnail slot
         jpegQuality: 0.7,
         maxImages: 50,       // safety cap on embedded images per article
         fetchTimeoutMs: 15000
@@ -119,9 +119,10 @@ const ImageUtils = {
     },
 
     /**
-     * Optimize an image for use as the EPUB cover: scale to *fill* a portrait frame
-     * (object-fit: cover) and center-crop to the X4's 3:5 screen, then grayscale + JPEG.
-     * Falls back to the original bytes when canvas processing is unavailable or fails.
+     * Optimize an image for use as the EPUB cover: scale to *fill* the library
+     * thumbnail frame (object-fit: cover) and center-crop to coverSize, then
+     * grayscale + JPEG. Falls back to the original bytes when canvas processing
+     * is unavailable or fails.
      * @returns {Promise<{ blob: Blob, mediaType: string, ext: string }>}
      */
     async processCover(blob) {

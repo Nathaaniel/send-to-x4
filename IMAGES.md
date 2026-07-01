@@ -6,10 +6,11 @@ optimized for the Xteink X4's 480×800 e-ink screen.
 ## What it does
 
 - **Cover image** — taken from the page's `og:image` / `twitter:image` meta tags
-  (or the first photo of an X/Twitter thread). It is shaped into a **portrait
-  480×800 (3:5) cover** that matches the X4 screen: scaled to *fill* the frame and
-  **center-cropped** (object-fit: cover), then grayscale + JPEG. So the X4 library
-  shows a proper full-frame thumbnail instead of a letterboxed banner.
+  (or the first photo of an X/Twitter thread). It is shaped into a **480×400
+  (6:5) cover** that matches the X4 library's thumbnail slot (which is landscape,
+  not full-screen portrait): scaled to *fill* the frame and **center-cropped**
+  (object-fit: cover), then grayscale + JPEG. So the X4 library shows a proper
+  full-frame thumbnail instead of a letterboxed banner.
 - **Inline images** — every `<img>` in the extracted article is:
   1. **downloaded** (in the background service worker, which has the `<all_urls>`
      host permission, so cross-origin images are allowed),
@@ -42,7 +43,7 @@ config: {
     grayscale: true,          // set false to keep colour (the X4 renders grey anyway)
     grayscaleGamma: 0.85,     // <1 lightens midtones (keeps pure black/white); 1 = no change
     maxDimension: 800,        // longest side in px for inline images; X4 panel is 480×800
-    coverSize: { width: 480, height: 800 }, // portrait cover frame, 3:5 (crop-to-fill)
+    coverSize: { width: 480, height: 400 }, // library thumbnail frame, 6:5 (crop-to-fill)
     jpegQuality: 0.7,         // 0–1; lower = smaller files
     maxImages: 50,            // safety cap per article
     fetchTimeoutMs: 15000
@@ -51,8 +52,8 @@ config: {
 
 - **Lighter images:** lower `grayscaleGamma` further (e.g. `0.8` or `0.75`) for a
   brighter look; raise toward `1` to keep them as-is.
-- **Cover shape:** change `coverSize` (e.g. `{ width: 533, height: 800 }` for a 2:3
-  cover). The image is always scaled to fill and center-cropped to that frame.
+- **Cover shape:** change `coverSize` to match whatever frame the library UI actually
+  uses. The image is always scaled to fill and center-cropped to that frame.
 
 ## Important: download timing & WiFi
 
