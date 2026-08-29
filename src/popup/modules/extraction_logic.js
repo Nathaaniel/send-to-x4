@@ -4,6 +4,51 @@
  */
 // Note: This function is stringified, so no imports allowed!
 export function extractArticle() {
+    // Elements that must never reach the EPUB: unsupported by e-ink readers,
+    // or pointing at a remote resource the reader cannot fetch offline.
+    const STRIP_SELECTOR = [
+        'script', 'style', 'svg', 'math', 'iframe', 'object', 'embed', 'form',
+        'input', 'button', 'select', 'textarea', 'video', 'audio', 'canvas',
+        'noscript', 'template', 'link', 'meta', 'base', 'map', 'dialog',
+        'img', 'picture', 'source', 'track', 'area', 'param'
+    ].join(',');
+
+    /**
+     * Turn an HTML fragment into a well-formed XHTML fragment.
+     *
+     * The EPUB content document is parsed as XML, so serializing raw innerHTML
+     * into it is not safe: innerHTML emits HTML named entities (&nbsp;), which
+     * XML does not define, and that single undefined entity is a fatal parse
+     * error - the downloaded book fails to open. XMLSerializer emits XML that
+     * is well-formed by construction.
+     */
+    const toCleanXhtml = (html) => {
+        if (!html) return '';
+
+        const container = document.createElement('div');
+        container.innerHTML = html;
+
+        container.querySelectorAll(STRIP_SELECTOR).forEach(el => el.remove());
+
+        container.querySelectorAll('*').forEach(el => {
+            Array.from(el.attributes).forEach(attr => {
+                const name = attr.name.toLowerCase();
+                if (name.indexOf('on') === 0 || name === 'style' || name === 'src' ||
+                    name === 'srcset' || name === 'background' || name === 'poster' ||
+                    name.indexOf('data-') === 0 || name.indexOf('aria-') === 0) {
+                    el.removeAttribute(attr.name);
+                }
+            });
+        });
+
+        try {
+            return new XMLSerializer().serializeToString(container);
+        } catch (e) {
+            console.warn('[X4] XMLSerializer failed, falling back to innerHTML:', e);
+            return container.innerHTML;
+        }
+    };
+
     try {
         console.log('[X4] Extracting article...');
         const hostname = window.location.hostname;
@@ -90,11 +135,12 @@ export function extractArticle() {
                                 .replace(/'/g, '&apos;');
                         };
 
-                        let tweetHtml = `<div class="tweet" style="border-bottom: 1px solid #ccc; padding: 10px 0;">`;
+                        let tweetHtml = `<div class="tweet">`;
                         if (isArticle && title) {
                             tweetHtml += `<h2>${escapeXml(title)}</h2>`;
                         }
-                        if (text) tweetHtml += `<div>${text}</div>`; // Articles often have complex HTML structure, so use div
+                        // Articles often have complex HTML structure, so use div
+                        if (text) tweetHtml += `<div>${toCleanXhtml(text)}</div>`;
 
                         // Images disabled for X4 compatibility
                         /*
@@ -112,8 +158,9 @@ export function extractArticle() {
                 if (threadContent.length > 0) {
                     const finalTitle = `${authorHandle} on X: "${title.replace(/"/g, "'")}"`;
                     // Date from first time element
-                    const dateEl = document.querySelector('time');
-                    const date = dateEl ? dateEl.getAttribute('datetime').split('T')[0] : new Date().toISOString().split('T')[0];
+                    const dateEl = document.querySelector('time[datetime]');
+                    const rawDate = dateEl ? dateEl.getAttribute('datetime') : null;
+                    const date = rawDate ? rawDate.split('T')[0] : new Date().toISOString().split('T')[0];
 
                     // Use first image found as cover
                     // We can look at the first tweet's photos
@@ -164,7 +211,7 @@ export function extractArticle() {
             if (article && article.textContent && article.textContent.length >= 400) {
                 title = article.title || document.title;
                 author = article.byline || article.siteName || '';
-                body = article.content;
+                body = toCleanXhtml(article.content);
                 textContent = article.textContent;
                 wordCount = textContent.split(/\s+/).length;
 

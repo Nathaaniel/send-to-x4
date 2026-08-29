@@ -114,6 +114,8 @@ It is designed for people who:
   - **Location on X4**: `/send-to-x4/`
   - **Content**: Clean XHTML with metadata (Title, Author, Source URL)
   - **Images**: Disabled by default for X4 compatibility (codebase supports it)
+  - **Self-contained**: Remote images, media and embeds are stripped, so the file
+    reads identically offline
   
   ---
   
@@ -128,6 +130,18 @@ It is designed for people who:
   - Make sure you are connected to the X4 WiFi hotspot
   - Check your **Settings** block in the popup to ensure the **IP Address** matches your device or firmware type.
   - Open the device IP (e.g., `http://192.168.4.1/`) in your browser to verify connectivity.
+  
+  ### "The downloaded EPUB won't open"
+  - EPUB content documents are parsed as strict XML, so a single HTML-only
+    construct (an `&nbsp;`, a boolean attribute, an unclosed `<img>`) makes the
+    whole book fail to open. Extracted markup is normalized before packaging; if
+    a page still produces an unopenable file, please open an issue with the URL.
+  
+  ### "Download failed"
+  - The filename is built from the page's title, author, site and publication
+    date; all four are sanitized, because the browser rejects a download outright
+    if the name contains a reserved character. If a download still fails, the
+    error is shown on the button and logged to the service worker console.
   
   ### "Extension context invalidated"
   - Reload the extension from `chrome://extensions/`

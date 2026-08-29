@@ -73,44 +73,66 @@ const EpubBuilder = {
     },
 
     /**
-     * Generate a filename for the EPUB
-     * Format: @handle - YYYY-MM-DD - first words.epub
-     * @param {Object} article - { title, author, date }
+     * Generate a filename for the EPUB.
+     * Format: Title - Author - Source - Date.epub
+     *
+     * Every component is sanitized: downloads.download() rejects the whole
+     * request with "Invalid filename" if any part contains a reserved
+     * character (a page that publishes "2026-03-04 10:00" as its date, for
+     * instance), and a stray "/" would silently write into a subdirectory.
+     * @param {Object} article - { title, author, date, sourceUrl }
      * @returns {string}
      */
     generateFilename(article) {
         const parts = [];
 
         // 1. Title (First)
-        const safeTitle = Sanitizer.sanitizeFilename(article.title, 50);
-        if (safeTitle) {
-            parts.push(safeTitle);
-        } else {
-            parts.push('Untitled');
-        }
+        parts.push(Sanitizer.sanitizeFilename(article.title, 50) || 'Untitled');
 
         // 2. Author
-        if (article.author) {
-            const safeAuthor = Sanitizer.sanitizeFilename(article.author, 30);
-            if (safeAuthor) parts.push(safeAuthor);
-        }
+        const safeAuthor = Sanitizer.sanitizeFilename(article.author, 30);
+        if (safeAuthor) parts.push(safeAuthor);
 
         // 3. Source (Domain)
         if (article.sourceUrl) {
             try {
                 const hostname = new URL(article.sourceUrl).hostname;
-                const source = hostname.replace(/^www\./, '');
-                parts.push(source);
+                const source = Sanitizer.sanitizeFilename(hostname.replace(/^www\./, ''), 40);
+                if (source) parts.push(source);
             } catch (e) {
                 // ignore invalid url
             }
         }
 
         // 4. Date (Last)
-        const date = article.date || new Date().toISOString().split('T')[0];
-        parts.push(date);
+        parts.push(this.normalizeDate(article.date));
 
-        return parts.join(' - ') + '.epub';
+        // Re-sanitize the joined name: it is the value handed to the downloads
+        // API, and it must not end in a dot or space either.
+        const filename = Sanitizer.sanitizeFilename(parts.join(' - '), 150) || 'Untitled';
+
+        return filename + '.epub';
+    },
+
+    /**
+     * Normalize whatever the page advertised as a publication date into
+     * YYYY-MM-DD. Pages publish all sorts of things here ("2026-03-04 10:00",
+     * "03/04/2026", free text), and the raw value used to go straight into the
+     * filename.
+     * @param {string} date
+     * @returns {string}
+     */
+    normalizeDate(date) {
+        const today = new Date().toISOString().split('T')[0];
+        if (!date) return today;
+
+        const iso = String(date).match(/(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) return iso[0];
+
+        const parsed = new Date(date);
+        if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
+
+        return Sanitizer.sanitizeFilename(date, 20) || today;
     },
 
     /**
@@ -131,6 +153,10 @@ const EpubBuilder = {
      * @returns {Promise<ArrayBuffer>}
      */
     async blobToArrayBuffer(blob) {
+        if (typeof blob.arrayBuffer === 'function') {
+            return blob.arrayBuffer();
+        }
+
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result);

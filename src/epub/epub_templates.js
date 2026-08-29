@@ -95,7 +95,9 @@ ${coverItem}
    * @param {Object} data - { title, author, date, body, url }
    */
   contentXhtml(data) {
-    const { title, author, date, body, url } = data;
+    const { title, author, date, body } = data;
+    // The extractors expose the article URL as `sourceUrl`; older callers used `url`.
+    const url = data.url || data.sourceUrl;
 
     // Build metadata line: @handle • date • Source: url
     const metaParts = [];
@@ -106,11 +108,14 @@ ${coverItem}
       ? `<p class="meta">${metaParts.join(' • ')}</p>`
       : '';
 
-    // Convert HTML body to XHTML (properly close self-closing tags)
+    // Turn the extracted HTML into well-formed XHTML. An EPUB content document
+    // is parsed as XML, so anything the parser rejects (an HTML named entity, a
+    // boolean attribute, an unclosed void element) makes the whole book
+    // unopenable.
     const xhtmlBody = this.htmlToXhtml(body);
 
     return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
 <head>
   <meta http-equiv="Content-Type" content="application/xhtml+xml; charset=utf-8"/>
@@ -146,6 +151,10 @@ ${coverItem}
       border-left: 3px solid #ccc;
       font-style: italic;
     }
+    .tweet {
+      border-bottom: 1px solid #ccc;
+      padding: 0.6em 0;
+    }
   </style>
 </head>
 <body>
@@ -175,27 +184,31 @@ ${coverItem}
   },
 
   /**
-   * Convert HTML to XHTML by properly closing self-closing tags
+   * Convert an HTML fragment into a well-formed XHTML fragment.
+   * Sanitizer does the real work (entities, boolean attributes, void elements,
+   * remote resources); the inline fallback only self-closes void elements, for
+   * the case where sanitize.js failed to load.
    * @param {string} html
    */
   htmlToXhtml(html) {
     if (!html) return '';
 
-    // List of void/self-closing elements in HTML that must be self-closed in XHTML
+    if (typeof Sanitizer !== 'undefined' && typeof Sanitizer.xhtmlBody === 'function') {
+      return Sanitizer.xhtmlBody(html);
+    }
+
+    console.warn('[EpubTemplates] Sanitizer unavailable, using minimal XHTML conversion');
+
     const voidElements = [
       'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
       'link', 'meta', 'param', 'source', 'track', 'wbr'
     ];
 
-    // Pattern to match void elements that are not already self-closed
-    // Matches: <tag ...> but not <tag ... /> or <tag .../>
     const pattern = new RegExp(
       `<(${voidElements.join('|')})([^>]*?)(?<!/)>`,
       'gi'
     );
 
-    // Replace with self-closing version
-    // Also ensures we don't double-close if the regex is too greedy, but (?<!/) handles the check.
     return html.replace(pattern, '<$1$2 />');
   }
 };

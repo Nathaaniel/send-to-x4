@@ -292,61 +292,151 @@ async function handleSendArticle(messageData, sender, sendResponse) {
 }
 
 /**
- * Download EPUB as fallback
- * Chrome MV3 service workers: Use data URL (can't use createObjectURL)
- * Firefox MV3 service workers: Use Blob URL (data URLs blocked for security)
+ * Trigger the download of a generated EPUB.
+ *
+ * Chrome MV3 service workers have no URL.createObjectURL, so the bytes travel
+ * as a data URL there; Firefox background scripts do have it and a blob URL
+ * keeps large books off the base64 detour. The choice is made by feature
+ * detection rather than by sniffing the browser.
+ *
+ * @param {ArrayBuffer} arrayBuffer - EPUB bytes
+ * @param {string} filename - Sanitized filename, including the .epub extension
+ * @returns {Promise<number>} - The download id
  */
 async function downloadEpubFallback(arrayBuffer, filename) {
-    try {
-        console.log('[X4 SW] Triggering download fallback...');
+    const canUseObjectUrl = typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function';
+    let downloadUrl;
 
-        // Detect if we're in Firefox (has 'browser' namespace) or Chrome
-        const isFirefox = typeof browser !== 'undefined' && typeof browser.runtime !== 'undefined';
-        console.log('[X4 SW] Browser detected:', isFirefox ? 'Firefox' : 'Chrome');
-
-        let downloadUrl;
-
-        if (isFirefox) {
-            // Firefox: Use Blob URL (works in MV3 service workers)
-            console.log('[X4 SW] Using Blob URL for Firefox...');
-            const blob = new Blob([arrayBuffer], { type: 'application/epub+zip' });
-            downloadUrl = URL.createObjectURL(blob);
-            console.log('[X4 SW] Blob URL created:', downloadUrl);
-        } else {
-            // Chrome: Use data URL (works in service workers)
-            console.log('[X4 SW] Converting to data URL for Chrome...');
-            const bytes = new Uint8Array(arrayBuffer);
-            let binary = '';
-            for (let i = 0; i < bytes.length; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            const base64 = btoa(binary);
-            downloadUrl = `data:application/epub+zip;base64,${base64}`;
-            console.log('[X4 SW] Data URL length:', downloadUrl.length);
-        }
-
-        // Trigger download
-        console.log('[X4 SW] Calling browserAPI.downloads.download...');
-        const downloadId = await browserAPI.downloads.download({
-            url: downloadUrl,
-            filename: filename,
-            saveAs: false
-        });
-
-        console.log('[X4 SW] Download triggered successfully, ID:', downloadId);
-
-        // Clean up Blob URL after download starts (Firefox only)
-        if (isFirefox) {
-            // Give the download a moment to start before revoking
-            setTimeout(() => {
-                URL.revokeObjectURL(downloadUrl);
-                console.log('[X4 SW] Blob URL revoked');
-            }, 1000);
-        }
-    } catch (error) {
-        console.error('[X4 SW] Download failed:', error);
-        throw error;
+    if (canUseObjectUrl) {
+        console.log('[X4 SW] Using Blob URL for download...');
+        downloadUrl = URL.createObjectURL(new Blob([arrayBuffer], { type: 'application/epub+zip' }));
+    } else {
+        console.log('[X4 SW] Using data URL for download...');
+        downloadUrl = arrayBufferToDataUrl(arrayBuffer);
     }
+
+    try {
+        let downloadId;
+
+        try {
+            downloadId = await browserAPI.downloads.download({
+                url: downloadUrl,
+                filename: filename,
+                saveAs: false
+            });
+        } catch (error) {
+            // downloads.download() rejects the whole request when the filename
+            // is not acceptable to the platform. Rather than losing the book,
+            // retry once with a name that cannot be rejected.
+            const fallbackName = buildFallbackFilename(filename);
+            console.warn(`[X4 SW] Download rejected for "${filename}" (${error.message}), retrying as "${fallbackName}"`);
+
+            downloadId = await browserAPI.downloads.download({
+                url: downloadUrl,
+                filename: fallbackName,
+                saveAs: false
+            });
+        }
+
+        console.log('[X4 SW] Download started, ID:', downloadId);
+
+        // The API resolves as soon as the download starts, so wait for the
+        // final state: an interrupted download must not be reported as a
+        // success to the popup.
+        const finalState = await waitForDownload(downloadId);
+        if (finalState && finalState.state === 'interrupted') {
+            throw new Error(`Download interrupted (${finalState.error || 'unknown reason'})`);
+        }
+
+        console.log('[X4 SW] Download finished:', filename);
+        return downloadId;
+    } finally {
+        if (canUseObjectUrl) {
+            URL.revokeObjectURL(downloadUrl);
+        }
+    }
+}
+
+/**
+ * Encode EPUB bytes as a base64 data URL (Chrome MV3 service worker path).
+ * @param {ArrayBuffer} arrayBuffer
+ * @returns {string}
+ */
+function arrayBufferToDataUrl(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    const CHUNK = 0x8000;
+    let binary = '';
+
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+
+    return `data:application/epub+zip;base64,${btoa(binary)}`;
+}
+
+/**
+ * Last-resort filename, used when the platform rejects the generated one.
+ * @param {string} filename
+ * @returns {string}
+ */
+function buildFallbackFilename(filename) {
+    const stem = (filename || '')
+        .replace(/\.epub$/i, '')
+        .replace(/[^\w \-]+/g, '')
+        .trim()
+        .substring(0, 40)
+        .replace(/^[.\s]+|[.\s]+$/g, '');
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+
+    return `${stem || 'article'} - ${stamp}.epub`;
+}
+
+/**
+ * Resolve once a download reaches a terminal state.
+ * Resolves with null if nothing is reported in time; a slow download is not
+ * treated as a failure.
+ * @param {number} downloadId
+ * @param {number} timeoutMs
+ * @returns {Promise<{state: string, error: string|null}|null>}
+ */
+function waitForDownload(downloadId, timeoutMs = 20000) {
+    return new Promise(resolve => {
+        let settled = false;
+
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            browserAPI.downloads.onChanged.removeListener(onChanged);
+            resolve(result);
+        };
+
+        const onChanged = (delta) => {
+            if (delta.id !== downloadId) return;
+            if (delta.state && delta.state.current !== 'in_progress') {
+                finish({
+                    state: delta.state.current,
+                    error: delta.error ? delta.error.current : null
+                });
+            }
+        };
+
+        const timer = setTimeout(() => finish(null), timeoutMs);
+        browserAPI.downloads.onChanged.addListener(onChanged);
+
+        // The download may already be finished by the time the listener is up.
+        try {
+            Promise.resolve(browserAPI.downloads.search({ id: downloadId })).then(items => {
+                const item = items && items[0];
+                if (item && item.state !== 'in_progress') {
+                    finish({ state: item.state, error: item.error || null });
+                }
+            }).catch(() => { /* the listener still covers us */ });
+        } catch (e) {
+            // the listener still covers us
+        }
+    });
 }
 
 /**
