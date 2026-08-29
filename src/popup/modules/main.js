@@ -13,7 +13,12 @@ class PopupController {
         this.ui = new UIManager();
         this.fileManager = new FileManager();
         this.articleManager = new ArticleManager();
-        this.settings = { firmwareType: 'stock', deviceIp: '192.168.3.3', settingsPanelOpen: false };
+        this.settings = {
+            firmwareType: 'stock',
+            deviceIp: '192.168.3.3',
+            settingsPanelOpen: false,
+            includeImages: true
+        };
         this.currentSort = 'newest'; // Default sort
     }
 
@@ -27,6 +32,7 @@ class PopupController {
             onDownload: () => this.handleDownload(),
             onSettingsChange: (e) => this.handleSettingsChange(e),
             onIpChange: (e) => this.handleIpChange(e),
+            onImagesChange: (e) => this.handleImagesChange(e),
             onConnect: () => this.handleConnect(),
             onSettingsToggle: () => this.handleSettingsToggle(),
             onSortChange: (e) => this.handleSortChange(e)
@@ -63,6 +69,7 @@ class PopupController {
                 this.settings.firmwareType = allSettings.firmwareType;
                 this.settings.deviceIp = allSettings.deviceIp;
                 this.settings.settingsPanelOpen = allSettings.settingsPanelOpen;
+                this.settings.includeImages = allSettings.includeImages;
 
                 this.ui.updateSettingsUI(this.settings);
                 this.ui.setSettingsPanelState(this.settings.settingsPanelOpen);
@@ -158,6 +165,15 @@ class PopupController {
         console.log('[Popup Controller] IP saved:', newIp);
     }
 
+    async handleImagesChange(event) {
+        this.settings.includeImages = event.target.checked;
+
+        if (window.Settings) {
+            await window.Settings.setIncludeImages(this.settings.includeImages);
+        }
+        console.log('[Popup Controller] Include images:', this.settings.includeImages);
+    }
+
     async handleConnect() {
         // Force save current input value first
         const currentInput = this.ui.getSettingsFromUI().deviceIp;
@@ -224,7 +240,8 @@ class PopupController {
                 },
                 settings: {
                     firmwareType: this.settings.firmwareType,
-                    deviceIp: this.settings.deviceIp
+                    deviceIp: this.settings.deviceIp,
+                    includeImages: this.settings.includeImages
                 }
             });
 

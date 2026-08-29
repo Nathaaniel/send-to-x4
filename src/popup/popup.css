@@ -601,3 +601,17 @@ body {
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
 }
+
+/* Settings checkbox */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}

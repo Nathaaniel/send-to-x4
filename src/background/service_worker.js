@@ -19,6 +19,7 @@ if (typeof importScripts === 'function') {
             '../utils/logger.js',
             '../utils/sanitize.js',
             '../epub/epub_templates.js',
+            '../epub/image_processor.js',
             '../epub/epub_builder.js',
             '../upload/x4_upload_tab.js',
             '../upload/crosspoint_upload.js',
@@ -156,6 +157,20 @@ async function handleFetch(payload) {
 }
 
 /**
+ * Whether article images should be embedded, defaulting to on if the setting
+ * cannot be read.
+ * @returns {Promise<boolean>}
+ */
+async function shouldIncludeImages() {
+    try {
+        return await Settings.getIncludeImages();
+    } catch (error) {
+        console.warn('[X4 SW] Could not read image setting, defaulting to on:', error);
+        return true;
+    }
+}
+
+/**
  * Handle download article request (generate EPUB and download locally)
  */
 async function handleDownloadArticle(article, sendResponse) {
@@ -163,7 +178,9 @@ async function handleDownloadArticle(article, sendResponse) {
 
     try {
         // Generate EPUB - returns a Blob
-        const epubBlob = await EpubBuilder.build(article);
+        const epubBlob = await EpubBuilder.build(article, {
+            includeImages: await shouldIncludeImages()
+        });
 
         if (!epubBlob || !(epubBlob instanceof Blob)) {
             throw new Error('EPUB generation failed');
@@ -229,7 +246,11 @@ async function handleSendArticle(messageData, sender, sendResponse) {
         if (tabId) await sendStatusUpdate(sender, 'generating', 'Creating EPUB...');
         await logToPopup('Generating EPUB...');
 
-        const epubBlob = await EpubBuilder.build(article);
+        const epubBlob = await EpubBuilder.build(article, {
+            includeImages: settings.includeImages !== undefined
+                ? settings.includeImages
+                : await shouldIncludeImages()
+        });
         const filename = EpubBuilder.generateFilename(article);
         const arrayBuffer = await EpubBuilder.blobToArrayBuffer(epubBlob);
 
@@ -445,7 +466,9 @@ function waitForDownload(downloadId, timeoutMs = 20000) {
 async function handleDownloadEpub(payload) {
     const { article } = payload;
 
-    const epubBlob = await EpubBuilder.build(article);
+    const epubBlob = await EpubBuilder.build(article, {
+        includeImages: await shouldIncludeImages()
+    });
     const filename = EpubBuilder.generateFilename(article);
     const arrayBuffer = await EpubBuilder.blobToArrayBuffer(epubBlob);
 

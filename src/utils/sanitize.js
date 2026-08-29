@@ -16,16 +16,24 @@ const Sanitizer = {
 
     /**
      * Void elements that only exist to reference an external resource.
-     * Images are disabled for X4 compatibility, and a remote <img> would make
-     * the EPUB unreadable offline (and invalid: the file is not listed in the
-     * OPF manifest), so these are dropped rather than self-closed.
+     * A remote reference would make the EPUB unreadable offline (and invalid:
+     * the file is not listed in the OPF manifest), so these are dropped rather
+     * than self-closed.
      */
-    DROPPED_VOID_ELEMENTS: ['img', 'source', 'track', 'area', 'param', 'picture'],
+    DROPPED_VOID_ELEMENTS: ['source', 'track', 'area', 'param', 'picture'],
 
     /**
      * Void elements that are kept, and must be self-closed for XHTML.
      */
-    KEPT_VOID_ELEMENTS: ['br', 'hr', 'col', 'wbr'],
+    KEPT_VOID_ELEMENTS: ['br', 'hr', 'col', 'wbr', 'img'],
+
+    /**
+     * An <img> survives only when it points at a file ImageProcessor already
+     * embedded in the container. Anything still pointing at the network at this
+     * stage could not be fetched, and a broken reference is worse than no
+     * image at all.
+     */
+    LOCAL_IMAGE_PATH: /^images\/[\w.-]+$/,
 
     /**
      * Named HTML entities that are NOT predefined in XML. An EPUB content
@@ -70,8 +78,12 @@ const Sanitizer = {
      * Attributes that are dropped from every element: event handlers, inline
      * styles, and anything that would make the reader reach for the network.
      */
-    isDroppedAttribute(name) {
+    isDroppedAttribute(name, tag) {
         const n = String(name).toLowerCase();
+
+        // The one exception: an embedded image needs its src.
+        if (n === 'src' && String(tag).toLowerCase() === 'img') return false;
+
         return n.indexOf('on') === 0 ||
             n === 'style' ||
             n === 'src' ||
@@ -101,9 +113,15 @@ const Sanitizer = {
             .join(',');
         temp.querySelectorAll(removeSelector).forEach(el => el.remove());
 
+        temp.querySelectorAll('img').forEach(el => {
+            if (!this.LOCAL_IMAGE_PATH.test(el.getAttribute('src') || '')) {
+                el.remove();
+            }
+        });
+
         temp.querySelectorAll('*').forEach(el => {
             Array.from(el.attributes).forEach(attr => {
-                if (this.isDroppedAttribute(attr.name)) {
+                if (this.isDroppedAttribute(attr.name, el.tagName)) {
                     el.removeAttribute(attr.name);
                 }
             });
@@ -175,10 +193,11 @@ const Sanitizer = {
         const attrPattern = /([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`>]+)))?/g;
         let attrs = '';
         let attrMatch;
+        let imageSource = '';
 
         while ((attrMatch = attrPattern.exec(attrText || '')) !== null) {
             const name = attrMatch[1];
-            if (this.isDroppedAttribute(name)) continue;
+            if (this.isDroppedAttribute(name, tag)) continue;
             if (!/^[a-zA-Z_:][\w:.-]*$/.test(name)) continue;
 
             const rawValue = attrMatch[2] !== undefined ? attrMatch[2]
@@ -187,7 +206,16 @@ const Sanitizer = {
                         // Boolean attribute (e.g. <td nowrap>): illegal in XML.
                         : name;
 
+            if (tag === 'img' && name.toLowerCase() === 'src') {
+                imageSource = rawValue;
+            }
+
             attrs += ` ${name}="${this.escapeAttributeValue(rawValue)}"`;
+        }
+
+        // Drop an image that is not one of the embedded files.
+        if (tag === 'img' && !this.LOCAL_IMAGE_PATH.test(imageSource)) {
+            return '';
         }
 
         if (this.KEPT_VOID_ELEMENTS.indexOf(tag) !== -1 || selfClosing) {

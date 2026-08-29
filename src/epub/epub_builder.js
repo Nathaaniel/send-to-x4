@@ -7,10 +7,11 @@
 const EpubBuilder = {
     /**
      * Generate EPUB blob from article data
-     * @param {Object} article - { title, author, date, body, url }
+     * @param {Object} article - { title, author, date, body, sourceUrl }
+     * @param {Object} [options] - { includeImages }
      * @returns {Promise<Blob>} - EPUB blob
      */
-    async build(article) {
+    async build(article, options = {}) {
         // JSZip is available globally from jszip.min.js loaded by service worker
         if (typeof JSZip === 'undefined') {
             throw new Error('JSZip not loaded');
@@ -18,6 +19,22 @@ const EpubBuilder = {
 
         const zip = new JSZip();
         const uuid = this.generateUuid();
+
+        // Fetch, downscale and embed the article's images, so the book reads
+        // the same offline. Anything that cannot be retrieved is dropped, and
+        // the article still builds.
+        let body = article.body;
+        let images = [];
+
+        if (options.includeImages !== false && typeof ImageProcessor !== 'undefined') {
+            try {
+                const processed = await ImageProcessor.processBody(body);
+                body = processed.html;
+                images = processed.images;
+            } catch (error) {
+                console.warn('[EpubBuilder] Image processing failed, continuing without images:', error);
+            }
+        }
 
         let coverMediaType = null;
         /*
@@ -43,7 +60,8 @@ const EpubBuilder = {
             author: article.author,
             date: article.date,
             uuid: uuid,
-            coverMediaType
+            coverMediaType,
+            images
         };
 
         // Add mimetype file (must be first and uncompressed)
@@ -59,7 +77,13 @@ const EpubBuilder = {
         zip.file('OEBPS/toc.ncx', EpubTemplates.tocNcx(metadata));
 
         // Add content.xhtml (pass full article including url)
-        zip.file('OEBPS/content.xhtml', EpubTemplates.contentXhtml(article));
+        zip.file('OEBPS/content.xhtml', EpubTemplates.contentXhtml({ ...article, body }));
+
+        // Add the embedded images; every one of these is listed in the OPF
+        // manifest above, which an EPUB requires.
+        images.forEach(image => {
+            zip.file(`OEBPS/${image.href}`, image.data);
+        });
 
         // Generate the EPUB as a Blob
         const epubBlob = await zip.generateAsync({

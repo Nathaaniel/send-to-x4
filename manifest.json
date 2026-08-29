@@ -24,6 +24,7 @@
       "src/utils/logger.js",
       "src/utils/sanitize.js",
       "src/epub/epub_templates.js",
+      "src/epub/image_processor.js",
       "src/epub/epub_builder.js",
       "src/upload/x4_upload_tab.js",
       "src/upload/crosspoint_upload.js",

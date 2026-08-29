@@ -24,6 +24,7 @@ const EpubTemplates = {
    */
   contentOpf(metadata) {
     const { title, author, date, uuid, coverMediaType } = metadata;
+    const images = metadata.images || [];
     const creatorLine = author
       ? `    <dc:creator>${this.escapeXml(author)}</dc:creator>`
       : '';
@@ -40,6 +41,13 @@ const EpubTemplates = {
       ? `    <item id="cover-image" href="images/cover.jpg" media-type="${coverMediaType}" properties="cover-image"/>`
       : '';
 
+    // Every file in the container has to be declared here, or the book is
+    // invalid and readers may refuse the images.
+    const imageItems = images
+      .map(image => `    <item id="${this.escapeXml(image.id)}" href="${this.escapeXml(image.href)}" media-type="${this.escapeXml(image.mediaType)}"/>`);
+
+    const extraItems = [coverItem].concat(imageItems).filter(Boolean).join('\n');
+
     return `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="2.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
@@ -53,7 +61,7 @@ ${coverMeta}
   <manifest>
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
     <item id="content" href="content.xhtml" media-type="application/xhtml+xml"/>
-${coverItem}
+${extraItems}
   </manifest>
   <spine toc="ncx">
     <itemref idref="content"/>
@@ -154,6 +162,19 @@ ${coverItem}
     .tweet {
       border-bottom: 1px solid #ccc;
       padding: 0.6em 0;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+    figure {
+      margin: 1.2em 0;
+      text-align: center;
+    }
+    figcaption {
+      color: #666;
+      font-size: 0.85em;
+      margin-top: 0.4em;
     }
   </style>
 </head>

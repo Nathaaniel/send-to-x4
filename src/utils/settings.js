@@ -10,6 +10,7 @@ const Settings = {
         STOCK_IP: 'stockIp',
         CROSSPOINT_IP: 'crosspointIp', // Re-using this key name is fine, but semantically it's now specific
         SETTINGS_PANEL_OPEN: 'settingsPanelOpen',
+        INCLUDE_IMAGES: 'includeImages',
 
         // Legacy keys for migration
         LEGACY_USE_CROSSPOINT: 'useCrosspointFirmware',
@@ -18,7 +19,8 @@ const Settings = {
 
     DEFAULTS: {
         STOCK_IP: '192.168.3.3',
-        CROSSPOINT_IP: '192.168.4.1'
+        CROSSPOINT_IP: '192.168.4.1',
+        INCLUDE_IMAGES: true
     },
 
     /**
@@ -129,8 +131,36 @@ const Settings = {
     },
 
     /**
+     * Get whether article images are embedded in the EPUB
+     * @returns {Promise<boolean>}
+     */
+    async getIncludeImages() {
+        try {
+            const result = await browserAPI.storage.sync.get(this.KEYS.INCLUDE_IMAGES);
+            const stored = result[this.KEYS.INCLUDE_IMAGES];
+            return stored === undefined ? this.DEFAULTS.INCLUDE_IMAGES : stored;
+        } catch (error) {
+            return this.DEFAULTS.INCLUDE_IMAGES;
+        }
+    },
+
+    /**
+     * Set whether article images are embedded in the EPUB
+     * @param {boolean} include
+     * @returns {Promise<void>}
+     */
+    async setIncludeImages(include) {
+        try {
+            await browserAPI.storage.sync.set({ [this.KEYS.INCLUDE_IMAGES]: include });
+            console.log('[Settings] Include images updated:', include);
+        } catch (error) {
+            console.error('[Settings] Error saving image setting:', error);
+        }
+    },
+
+    /**
      * Get all settings
-     * @returns {Promise<{firmwareType: string, deviceIp: string, settingsPanelOpen: boolean}>}
+     * @returns {Promise<{firmwareType: string, deviceIp: string, settingsPanelOpen: boolean, includeImages: boolean}>}
      */
     async getAll() {
         try {
@@ -151,14 +181,16 @@ const Settings = {
             return {
                 firmwareType,
                 deviceIp,
-                settingsPanelOpen: panelResult[this.KEYS.SETTINGS_PANEL_OPEN] || false
+                settingsPanelOpen: panelResult[this.KEYS.SETTINGS_PANEL_OPEN] || false,
+                includeImages: await this.getIncludeImages()
             };
         } catch (error) {
             console.error('[Settings] Error getting all settings:', error);
             return {
                 firmwareType: 'stock',
-                deviceIp: '192.168.3.3',
-                settingsPanelOpen: false
+                deviceIp: this.DEFAULTS.STOCK_IP,
+                settingsPanelOpen: false,
+                includeImages: this.DEFAULTS.INCLUDE_IMAGES
             };
         }
     }

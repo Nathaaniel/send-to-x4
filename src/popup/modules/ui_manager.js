@@ -30,6 +30,7 @@ export class UIManager {
             firmwareTypeSelect: document.getElementById('firmware-type'),
             deviceIpContainer: document.getElementById('device-ip-container'),
             deviceIpInput: document.getElementById('device-ip'),
+            includeImagesInput: document.getElementById('include-images'),
             connectBtn: document.getElementById('connect-btn'),
             settingsHeader: document.getElementById('settings-header'),
             settingsContent: document.getElementById('settings-content'),
@@ -43,6 +44,7 @@ export class UIManager {
         if (handlers.onDownload) this.elements.downloadBtn.addEventListener('click', handlers.onDownload);
         if (handlers.onSettingsChange) this.elements.firmwareTypeSelect.addEventListener('change', handlers.onSettingsChange);
         if (handlers.onIpChange) this.elements.deviceIpInput.addEventListener('change', handlers.onIpChange);
+        if (handlers.onImagesChange) this.elements.includeImagesInput.addEventListener('change', handlers.onImagesChange);
         if (handlers.onConnect) this.elements.connectBtn.addEventListener('click', handlers.onConnect);
         if (handlers.onSettingsToggle) this.elements.settingsHeader.addEventListener('click', handlers.onSettingsToggle);
         if (handlers.onSortChange) this.elements.sortSelect.addEventListener('change', handlers.onSortChange);
@@ -152,6 +154,7 @@ export class UIManager {
     updateSettingsUI(settings) {
         this.elements.firmwareTypeSelect.value = settings.firmwareType;
         this.elements.deviceIpInput.value = settings.deviceIp;
+        this.elements.includeImagesInput.checked = settings.includeImages !== false;
         // Optional: Update placeholder based on firmware type (UX improvement)
         if (settings.firmwareType === 'crosspoint') {
             this.elements.deviceIpInput.placeholder = '192.168.4.1';
@@ -163,7 +166,8 @@ export class UIManager {
     getSettingsFromUI() {
         return {
             firmwareType: this.elements.firmwareTypeSelect.value,
-            deviceIp: this.elements.deviceIpInput.value.trim()
+            deviceIp: this.elements.deviceIpInput.value.trim(),
+            includeImages: this.elements.includeImagesInput.checked
         };
     }
 

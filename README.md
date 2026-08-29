@@ -38,6 +38,8 @@ It is designed for people who:
   - 🤖 **CrossPoint Firmware Ready** — Supports both Stock and CrossPoint firmware with custom IPs
   - 💾 **Offline-first & local** — No accounts, no servers, no tracking
   - 📥 **EPUB download fallback** — Keep a local copy if needed
+  - 🖼️ **Images, sized for e-ink** — Article images are downscaled, converted to
+    grayscale and embedded in the EPUB, so they render on the X4 and offline
   - 🗂️ **Advanced File Management** — View, sort, and delete files directly on the device
   
   ---
@@ -113,9 +115,11 @@ It is designed for people who:
   - **Filename**: `Title - Author - Source - Date.epub`
   - **Location on X4**: `/send-to-x4/`
   - **Content**: Clean XHTML with metadata (Title, Author, Source URL)
-  - **Images**: Disabled by default for X4 compatibility (codebase supports it)
-  - **Self-contained**: Remote images, media and embeds are stripped, so the file
-    reads identically offline
+  - **Images**: Embedded, downscaled to 800px wide, grayscale JPEG. Toggle with
+    **Include images** in the popup's Settings block. Capped at 30 images / 6 MB
+    per book; icons and tracking pixels under 64px are skipped
+  - **Self-contained**: Video, embeds and any image that could not be fetched are
+    stripped, so the file reads identically offline
   
   ---
   
@@ -130,6 +134,13 @@ It is designed for people who:
   - Make sure you are connected to the X4 WiFi hotspot
   - Check your **Settings** block in the popup to ensure the **IP Address** matches your device or firmware type.
   - Open the device IP (e.g., `http://192.168.4.1/`) in your browser to verify connectivity.
+  
+  ### "The images are missing"
+  - Check **Include images** in the popup's Settings block
+  - Images are fetched at build time. If you have already switched to the X4
+    hotspot and the extension has not fetched that article's images before, there
+    is no route to them and they are dropped rather than left broken — build once
+    while still online (see Known Limitations)
   
   ### "The downloaded EPUB won't open"
   - EPUB content documents are parsed as strict XML, so a single HTML-only
@@ -152,7 +163,11 @@ It is designed for people who:
   
   ## Known Limitations
   
-  - Text-only (images are temporarily disabled)
+  - Images are fetched when the EPUB is built, so an article sent while on the X4
+    hotspot keeps its images only if the extension already fetched them (its own
+    cache is separate from the browser's page cache). Pressing **Download** while
+    still online, or sending before switching networks, is enough; otherwise the
+    article arrives as text
   - Requires manual WiFi switching
   - Works best on long-form, reading-oriented pages
   - Not a read-later service or cloud sync tool
